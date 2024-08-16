@@ -21,6 +21,8 @@ STAMINA_DECREASE = 1
 STAMINA_REGEN = 0.5
 POWER_UP_DURATION = 5000
 
+AI_DIFFICULTY = {"easy": 0.5, "medium": 1.0, "hard": 1.5}
+
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Tug of War")
 
@@ -42,7 +44,12 @@ power_up_pos = None
 round_number = 1
 game_paused = False
 sound_enabled = True
-ai_opponent = False
+ai_enabled = False
+ai_difficulty = "medium"
+special_move_active = False
+special_move_time = 0
+weather_effect = None
+wind_direction = 0
 
 clock = pygame.time.Clock()
 
@@ -61,7 +68,7 @@ def update_stamina(current_stamina, key_pressed):
     return min(max(current_stamina, 0), MAX_STAMINA)
 
 def reset_game():
-    global marker_pos, player1_stamina, player2_stamina, game_over, difficulty, start_game, power_up_active, power_up_pos, power_up_time, ai_opponent
+    global marker_pos, player1_stamina, player2_stamina, game_over, difficulty, start_game, power_up_active, power_up_pos, power_up_time, ai_enabled, special_move_active, special_move_time, weather_effect, wind_direction
     marker_pos = MARKER_START_POS
     player1_stamina = MAX_STAMINA
     player2_stamina = MAX_STAMINA
@@ -70,7 +77,11 @@ def reset_game():
     power_up_active = False
     power_up_pos = None
     power_up_time = 0
-    ai_opponent = False
+    ai_enabled = False
+    special_move_active = False
+    special_move_time = 0
+    weather_effect = None
+    wind_direction = 0
 
 def get_stamina_color(stamina):
     if stamina > MAX_STAMINA // 2:
@@ -100,6 +111,33 @@ def apply_power_up(player):
             player2_stamina = MAX_STAMINA
         pygame.time.set_timer(pygame.USEREVENT + 2, POWER_UP_DURATION)
 
+def apply_special_move(player):
+    global special_move_active, special_move_time, player1_stamina, player2_stamina
+    special_move_active = True
+    special_move_time = pygame.time.get_ticks()
+    if player == 1:
+        player1_stamina = MAX_STAMINA
+    else:
+        player2_stamina = MAX_STAMINA
+
+def ai_behavior():
+    if ai_difficulty == "easy":
+        if player2_stamina > 50:
+            return True if random.random() > 0.5 else False
+    elif ai_difficulty == "medium":
+        if player2_stamina > 30:
+            return True if random.random() > 0.3 else False
+    elif ai_difficulty == "hard":
+        if player2_stamina > 10:
+            return True if random.random() > 0.1 else False
+    return False
+
+def apply_weather_effect():
+    global wind_direction
+    if weather_effect == "wind":
+        wind_direction = random.choice([-1, 1])
+        pygame.time.set_timer(pygame.USEREVENT + 3, 10000)  # Wind lasts for 10 seconds
+
 while True:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -111,7 +149,9 @@ while True:
             if event.key == pygame.K_m:
                 sound_enabled = not sound_enabled
             if event.key == pygame.K_a:
-                ai_opponent = not ai_opponent
+                ai_enabled = not ai_enabled
+            if event.key == pygame.K_s and not special_move_active:
+                apply_special_move(1)
         if event.type == pygame.USEREVENT + 1:
             BASE_MARKER_SPEED /= 1.5
         if event.type == pygame.USEREVENT + 2:
@@ -119,6 +159,8 @@ while True:
                 player1_stamina = MAX_STAMINA
             else:
                 player2_stamina = MAX_STAMINA
+        if event.type == pygame.USEREVENT + 3:
+            wind_direction = 0
 
     if game_paused:
         screen.fill(BG_COLOR_START)
@@ -145,12 +187,15 @@ while True:
 
     if not game_over:
         player1_stamina = update_stamina(player1_stamina, keys[pygame.K_a])
-        player2_stamina = update_stamina(player2_stamina, keys[pygame.K_l])
+        if ai_enabled:
+            player2_stamina = update_stamina(player2_stamina, ai_behavior())
+        else:
+            player2_stamina = update_stamina(player2_stamina, keys[pygame.K_l])
 
         if keys[pygame.K_a] and player1_stamina > 0:
-            marker_pos -= BASE_MARKER_SPEED * difficulty * (player1_stamina / MAX_STAMINA)
-        if keys[pygame.K_l] and player2_stamina > 0:
-            marker_pos += BASE_MARKER_SPEED * difficulty * (player2_stamina / MAX_STAMINA)
+            marker_pos -= BASE_MARKER_SPEED * difficulty * (player1_stamina / MAX_STAMINA) + wind_direction
+        if (ai_enabled and ai_behavior()) or (keys[pygame.K_l] and player2_stamina > 0):
+            marker_pos += BASE_MARKER_SPEED * difficulty * (player2_stamina / MAX_STAMINA) - wind_direction
 
         if not power_up_active and random.random() < 0.001:
             power_up_pos = spawn_power_up()
@@ -170,6 +215,10 @@ while True:
                 apply_power_up(1 if marker_pos < SCREEN_WIDTH // 2 else 2)
                 power_up_active = False
                 power_up_time = pygame.time.get_ticks()
+
+        if not weather_effect and random.random() < 0.001:
+            weather_effect = random.choice(["wind"])
+            apply_weather_effect()
 
     bg_color_dynamic = (
         255 - int((marker_pos / SCREEN_WIDTH) * 100),
