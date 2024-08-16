@@ -36,9 +36,13 @@ rounds_won_p2 = 0
 player1_name = ""
 player2_name = ""
 power_up_active = False
+power_up_type = ""
 power_up_time = 0
 power_up_pos = None
 round_number = 1
+game_paused = False
+sound_enabled = True
+ai_opponent = False
 
 clock = pygame.time.Clock()
 
@@ -57,7 +61,7 @@ def update_stamina(current_stamina, key_pressed):
     return min(max(current_stamina, 0), MAX_STAMINA)
 
 def reset_game():
-    global marker_pos, player1_stamina, player2_stamina, game_over, difficulty, start_game, power_up_active, power_up_pos, power_up_time
+    global marker_pos, player1_stamina, player2_stamina, game_over, difficulty, start_game, power_up_active, power_up_pos, power_up_time, ai_opponent
     marker_pos = MARKER_START_POS
     player1_stamina = MAX_STAMINA
     player2_stamina = MAX_STAMINA
@@ -66,6 +70,7 @@ def reset_game():
     power_up_active = False
     power_up_pos = None
     power_up_time = 0
+    ai_opponent = False
 
 def get_stamina_color(stamina):
     if stamina > MAX_STAMINA // 2:
@@ -74,13 +79,53 @@ def get_stamina_color(stamina):
         return STAMINA_BAR_COLOR_LOW
 
 def spawn_power_up():
-    return random.randint(100, SCREEN_WIDTH - 100), SCREEN_HEIGHT // 2
+    types = ["stamina_boost", "speed_boost", "invincibility"]
+    return random.randint(100, SCREEN_WIDTH - 100), SCREEN_HEIGHT // 2, random.choice(types)
+
+def apply_power_up(player):
+    global player1_stamina, player2_stamina, power_up_type
+    if power_up_type == "stamina_boost":
+        if player == 1:
+            player1_stamina = min(MAX_STAMINA, player1_stamina + 30)
+        else:
+            player2_stamina = min(MAX_STAMINA, player2_stamina + 30)
+    elif power_up_type == "speed_boost":
+        global BASE_MARKER_SPEED
+        BASE_MARKER_SPEED *= 1.5
+        pygame.time.set_timer(pygame.USEREVENT + 1, POWER_UP_DURATION)
+    elif power_up_type == "invincibility":
+        if player == 1:
+            player1_stamina = MAX_STAMINA
+        else:
+            player2_stamina = MAX_STAMINA
+        pygame.time.set_timer(pygame.USEREVENT + 2, POWER_UP_DURATION)
 
 while True:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             pygame.quit()
             sys.exit()
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_p:
+                game_paused = not game_paused
+            if event.key == pygame.K_m:
+                sound_enabled = not sound_enabled
+            if event.key == pygame.K_a:
+                ai_opponent = not ai_opponent
+        if event.type == pygame.USEREVENT + 1:
+            BASE_MARKER_SPEED /= 1.5
+        if event.type == pygame.USEREVENT + 2:
+            if player1_stamina == MAX_STAMINA:
+                player1_stamina = MAX_STAMINA
+            else:
+                player2_stamina = MAX_STAMINA
+
+    if game_paused:
+        screen.fill(BG_COLOR_START)
+        draw_text("Game Paused", SCREEN_WIDTH // 2 - 100, SCREEN_HEIGHT // 2 - 20, TEXT_COLOR)
+        draw_text("Press P to Resume", SCREEN_WIDTH // 2 - 120, SCREEN_HEIGHT // 2 + 40, TEXT_COLOR)
+        pygame.display.flip()
+        continue
 
     keys = pygame.key.get_pressed()
 
@@ -110,19 +155,21 @@ while True:
         if not power_up_active and random.random() < 0.001:
             power_up_pos = spawn_power_up()
             power_up_active = True
+            power_up_type = power_up_pos[2]
 
         if power_up_active:
-            pygame.draw.circle(screen, POWER_UP_COLOR, power_up_pos, 10)
+            power_up_color = POWER_UP_COLOR
+            if power_up_type == "stamina_boost":
+                power_up_color = (0, 255, 255)
+            elif power_up_type == "speed_boost":
+                power_up_color = (255, 0, 255)
+            elif power_up_type == "invincibility":
+                power_up_color = (255, 255, 0)
+            pygame.draw.circle(screen, power_up_color, power_up_pos[:2], 10)
             if marker_pos >= power_up_pos[0] - 10 and marker_pos <= power_up_pos[0] + 10:
-                if marker_pos < SCREEN_WIDTH // 2:
-                    player1_stamina += 20
-                else:
-                    player2_stamina += 20
+                apply_power_up(1 if marker_pos < SCREEN_WIDTH // 2 else 2)
                 power_up_active = False
                 power_up_time = pygame.time.get_ticks()
-
-        if pygame.time.get_ticks() - power_up_time > POWER_UP_DURATION:
-            power_up_active = False
 
     bg_color_dynamic = (
         255 - int((marker_pos / SCREEN_WIDTH) * 100),
