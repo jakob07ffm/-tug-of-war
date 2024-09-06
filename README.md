@@ -64,3 +64,4 @@ To run the game:
 3. Run the game script with `python tug_of_war.py`.
 
 Enjoy the game!
+![](tug.JPG)
